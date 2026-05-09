@@ -13,6 +13,9 @@
         {% if username %}
         <div class="d-flex align-items-center gap-3">
             <span class="text-light">{{ username }}</span>
+            {% if username == 'admin' %}
+            <a href="{{ url_for('admin') }}" class="btn btn-sm btn-outline-warning">Admin</a>
+            {% endif %}
             <a href="{{ url_for('logout') }}" class="btn btn-sm btn-outline-light">Logout</a>
         </div>
         {% endif %}

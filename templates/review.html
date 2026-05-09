@@ -58,7 +58,7 @@
         <!-- 1. SUMMARY -->
         <div class="card mb-3 section-card" data-section="summary">
             <div class="card-header d-flex justify-content-between">
-                <h6 class="mb-0">1. Summary</h6>
+                <h6 class="mb-0">1. Summary of Post and Details</h6>
                 <small class="text-muted">Highlight text to annotate</small>
             </div>
             <div class="card-body">
@@ -88,7 +88,10 @@
                         <button class="btn btn-sm verdict-btn correct {% if rev and rev.verdict == 'correct' %}active{% endif %}" data-verdict="correct">Correct</button>
                         <button class="btn btn-sm verdict-btn incorrect {% if rev and rev.verdict == 'incorrect' %}active{% endif %}" data-verdict="incorrect">Incorrect</button>
                         <button class="btn btn-sm verdict-btn not-sure {% if rev and rev.verdict == 'not_sure' %}active{% endif %}" data-verdict="not_sure">Not Sure</button>
-                        <input type="text" class="form-control form-control-sm verdict-note" placeholder="Note..." value="{{ rev.note if rev else '' }}" style="width:180px;">
+                        <button class="btn btn-sm note-toggle-btn {% if rev and rev.note %}has-note{% endif %}" title="Add/view note">&#9998;</button>
+                    </div>
+                    <div class="note-area {% if not (rev and rev.note) %}d-none{% endif %}">
+                        <textarea class="form-control form-control-sm verdict-note" rows="2" placeholder="Add a note...">{{ rev.note if rev else '' }}</textarea>
                     </div>
                 </div>
                 {% endfor %}
@@ -115,7 +118,10 @@
                         <button class="btn btn-sm verdict-btn correct {% if rev and rev.verdict == 'correct' %}active{% endif %}" data-verdict="correct">Correct</button>
                         <button class="btn btn-sm verdict-btn incorrect {% if rev and rev.verdict == 'incorrect' %}active{% endif %}" data-verdict="incorrect">Incorrect</button>
                         <button class="btn btn-sm verdict-btn not-sure {% if rev and rev.verdict == 'not_sure' %}active{% endif %}" data-verdict="not_sure">Not Sure</button>
-                        <input type="text" class="form-control form-control-sm verdict-note" placeholder="Note..." value="{{ rev.note if rev else '' }}" style="width:180px;">
+                        <button class="btn btn-sm note-toggle-btn {% if rev and rev.note %}has-note{% endif %}" title="Add/view note">&#9998;</button>
+                    </div>
+                    <div class="note-area {% if not (rev and rev.note) %}d-none{% endif %}">
+                        <textarea class="form-control form-control-sm verdict-note" rows="2" placeholder="Add a note...">{{ rev.note if rev else '' }}</textarea>
                     </div>
                 </div>
                 {% endfor %}
@@ -136,7 +142,10 @@
                         <button class="btn btn-sm verdict-btn correct {% if rev and rev.verdict == 'correct' %}active{% endif %}" data-verdict="correct">Correct</button>
                         <button class="btn btn-sm verdict-btn incorrect {% if rev and rev.verdict == 'incorrect' %}active{% endif %}" data-verdict="incorrect">Incorrect</button>
                         <button class="btn btn-sm verdict-btn not-sure {% if rev and rev.verdict == 'not_sure' %}active{% endif %}" data-verdict="not_sure">Not Sure</button>
-                        <input type="text" class="form-control form-control-sm verdict-note" placeholder="Note..." value="{{ rev.note if rev else '' }}" style="width:180px;">
+                        <button class="btn btn-sm note-toggle-btn {% if rev and rev.note %}has-note{% endif %}" title="Add/view note">&#9998;</button>
+                    </div>
+                    <div class="note-area {% if not (rev and rev.note) %}d-none{% endif %}">
+                        <textarea class="form-control form-control-sm verdict-note" rows="2" placeholder="Add a note...">{{ rev.note if rev else '' }}</textarea>
                     </div>
                 </div>
                 {% endfor %}
@@ -226,9 +235,32 @@ document.querySelectorAll('.verdict-btn').forEach(btn => {
     });
 });
 
+// Note toggle buttons
+document.querySelectorAll('.note-toggle-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+        const item = this.closest('.review-item');
+        const noteArea = item.querySelector('.note-area');
+        noteArea.classList.toggle('d-none');
+        if (!noteArea.classList.contains('d-none')) {
+            noteArea.querySelector('.verdict-note').focus();
+        }
+    });
+});
+
 document.querySelectorAll('.verdict-note').forEach(input => {
     let t;
-    input.addEventListener('input', () => { clearTimeout(t); t = setTimeout(scheduleAutoSave, 800); });
+    input.addEventListener('input', function() {
+        clearTimeout(t);
+        // Update toggle button style
+        const item = this.closest('.review-item');
+        const toggleBtn = item.querySelector('.note-toggle-btn');
+        if (this.value.trim()) {
+            toggleBtn.classList.add('has-note');
+        } else {
+            toggleBtn.classList.remove('has-note');
+        }
+        t = setTimeout(scheduleAutoSave, 800);
+    });
 });
 
 let saveTimer = null;
@@ -313,6 +345,7 @@ document.getElementById('saveAnnotBtn').addEventListener('click', function() {
         body: JSON.stringify({
             model_name: MODEL,
             section: pendingAnnot.section,
+            item_index: pendingAnnot.index,
             start: pendingAnnot.start,
             end: pendingAnnot.end,
             text: pendingAnnot.text,
@@ -323,9 +356,14 @@ document.getElementById('saveAnnotBtn').addEventListener('click', function() {
     .then(r => r.json())
     .then(d => {
         if (d.ok) {
+            // Remove any overlapping annotations the server replaced
+            if (d.removed_ids && d.removed_ids.length) {
+                existingAnnotations = existingAnnotations.filter(a => !d.removed_ids.includes(a.id));
+            }
             existingAnnotations.push({
                 id: d.id,
                 section: pendingAnnot.section,
+                item_index: pendingAnnot.index,
                 start: pendingAnnot.start,
                 end: pendingAnnot.end,
                 text: pendingAnnot.text,
@@ -377,7 +415,8 @@ function renderAnnotations() {
 function highlightAnnotatedSpans() {
     document.querySelectorAll('.annotatable-text').forEach(el => {
         const section = el.dataset.section;
-        const annots = existingAnnotations.filter(a => a.section === section);
+        const index = parseInt(el.dataset.index);
+        const annots = existingAnnotations.filter(a => a.section === section && a.item_index === index);
         if (annots.length === 0) return;
 
         // Get the raw text, strip any existing highlights
